@@ -1,0 +1,1394 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Down to Earth</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <!-- Leaflet + Esri Leaflet (CDN) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+  <style>
+    :root {
+      --bg: #0e0f12;
+      --panel: #15171c;
+      --panel-2: #1b1e24;
+      --text: #e8ecf3;
+      --muted: #9aa3b2;
+      --primary: #4da3ff;
+      --accent: #ffd45e;
+      --danger: #e24d4d;
+      --ring-red: rgba(200,30,40,0.45);
+      --ring-yellow: rgba(255,190,60,0.30);
+      --ring-green: rgba(80,220,120,0.22);
+      --ring-blue: rgba(90,160,255,0.14);
+      --border: #2a2f38;
+      --shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background: var(--bg); color: var(--text); font: 16px/1.4 Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; height:100vh; display:flex; }
+    .left {
+        width: 460px; min-width: 360px; max-width: 520px; height:100vh; overflow:auto;
+        padding: 22px 20px 20px; border-right: 1px solid var(--border); background: linear-gradient(180deg, #15171c, #101216);
+        /* NEW: smooth collapse/expand */
+        transition:
+            width 320ms ease,
+            min-width 320ms ease,
+            padding 320ms ease,
+            border-right-color 320ms ease;
+        }
+    h1 { font-size: 22px; margin: 0 0 8px; letter-spacing: 0.2px; }
+    .sub { color: var(--muted); margin-bottom: 18px; }
+    .group { background: var(--panel); border:1px solid var(--border); border-radius: 14px; padding: 14px; box-shadow: var(--shadow); margin-bottom: 14px; }
+    label { display:flex; justify-content:space-between; font-weight:600; margin: 8px 0 6px; }
+    input[type=range]{ width:100%; accent-color: var(--primary); }
+    .row { display:flex; gap:10px; align-items:center; margin-top: 10px; }
+    .btn {
+      padding:10px 14px; border-radius: 10px; border:1px solid var(--border); background: var(--primary); color:#06121f;
+      font-weight: 700; cursor:pointer; box-shadow: var(--shadow);
+    }
+    .btn.secondary { background: var(--panel-2); color: var(--text); }
+    .stats-grid {
+      display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top: 8px;
+    }
+    .stat { background: var(--panel-2); border:1px solid var(--border); border-radius:12px; padding:10px; }
+    .stat .k { font-size:12px; color: var(--muted); }
+    .stat .v { font-size: 18px; margin-top: 4px; font-weight: 700; color: #ffffff; word-break: break-all; }
+    .legend { display:flex; gap:10px; flex-wrap:wrap; margin-top:8px; }
+    .tag { display:flex; gap:8px; align-items:center; font-size:13px; color:var(--muted); }
+    .dot { width:14px; height:14px; border-radius:50%; border:1px solid var(--border); }
+    .map-wrap { flex:1; position:relative; height:100vh; }
+    #map { position:absolute; inset:0; }
+    .pill {
+      position: absolute; top: 14px; left: 14px; background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(6px); border:1px solid var(--border); color:#fff; padding:8px 10px; border-radius: 999px; font-size:13px;
+    }
+    .leaflet-div-icon.ring-label,
+  .leaflet-div-icon.crater-label {
+    background: transparent;
+    border: 0;
+    width: auto !important;
+    height: auto !important;
+  }
+  .ring-label-box, .crater-label-box {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 10px;
+    background: rgba(0,0,0,0.55);
+    border: 1px solid var(--border);
+    font-size: 12px;
+    white-space: nowrap;
+  }
+    .footnote { color: var(--muted); font-size:12px; margin-top: 8px; }
+    a { color: var(--accent); text-decoration: none; }
+    .explosion-glow { filter: blur(6px); mix-blend-mode: screen; }
+    .shockwave-ring { mix-blend-mode: screen; }
+    /* ensure the left panel can position children */
+    .left { position: relative; }
+
+    /* collapse/expand panel */
+    .left.collapsed {
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  border-right-color: transparent; /* instead of border-right: 0 */
+  overflow: hidden;
+}
+
+    /* button sits top-right of the left panel by default */
+    .toggle-panel {
+    position: absolute; top: 10px; right: 10px; z-index: 1001;
+    background: #101216; color: #e8ecf3; border: 1px solid var(--border);
+    border-radius: 999px; padding: 8px 12px; cursor: pointer; box-shadow: var(--shadow);
+    }
+
+    /* when collapsed, float the same button at the top-left of the map so it's still clickable */
+    .left.collapsed .toggle-panel {
+    position: fixed; left: 14px; top: 14px; right: auto;
+    }
+
+
+    /* existing explosion helpers are already present; keep them */
+    .explosion-glow { filter: blur(6px); mix-blend-mode: screen; }
+    .shockwave-ring { mix-blend-mode: screen; }
+
+    .overlay-controls {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    z-index: 1002;
+    background: rgba(16,18,22,0.78);
+    backdrop-filter: blur(6px);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-size: 13px;
+    box-shadow: var(--shadow);
+    }
+    .overlay-controls label { display:flex; align-items:center; gap:8px; margin: 4px 0; cursor: pointer; }
+    .overlay-controls input { accent-color: var(--primary); }
+
+    #fx {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 650; /* above overlay (400) and markers (600), below our 'effects' pane (651) */
+}
+
+.landing {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  background: #05060a;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  opacity: 1;
+  transition: opacity 900ms ease;
+}
+
+/* Starfield (3 parallax layers for depth) */
+.landing .stars, .landing .stars:before, .landing .stars:after {
+  position: absolute;
+  content: "";
+  inset: -200px; /* bleed to cover edges during drift */
+  background-repeat: repeat;
+  background-image:
+    radial-gradient(2px 2px at 20px 30px, #ffffff 60%, transparent 62%),
+    radial-gradient(1px 1px at 60px 80px, #cfe3ff 60%, transparent 62%),
+    radial-gradient(1px 1px at 120px 40px, #cfd6ff 60%, transparent 62%),
+    radial-gradient(1.5px 1.5px at 200px 120px, #e6f0ff 60%, transparent 62%),
+    radial-gradient(1px 1px at 260px 200px, #ffffff 60%, transparent 62%),
+    radial-gradient(1px 1px at 340px 160px, #dbe7ff 60%, transparent 62%);
+  background-size: 400px 400px;
+  animation: drift 120s linear infinite, twinkle 3.6s ease-in-out infinite;
+  opacity: 0.9;
+}
+.landing .stars:before {
+  animation-duration: 160s, 4.6s;
+  opacity: 0.6;
+  filter: blur(0.3px);
+}
+.landing .stars:after {
+  animation-duration: 200s, 5.4s;
+  opacity: 0.4;
+  filter: blur(0.6px);
+}
+@keyframes drift {
+  from { transform: translate3d(0,0,0); }
+  to   { transform: translate3d(-400px,-400px,0); }
+}
+@keyframes twinkle {
+  0%,100% { filter: brightness(1); }
+  50%     { filter: brightness(1.35); }
+}
+
+/* Center card */
+.landing .center {
+  text-align: center;
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 18px;
+  padding: 24px 28px;
+  border-radius: 18px;
+  background: rgba(0,0,0,0.45);
+  border: 1px solid var(--border, #2a2f38);
+  box-shadow: var(--shadow, 0 10px 30px rgba(0,0,0,0.35));
+  backdrop-filter: blur(6px);
+}
+.landing .logo {
+  width: clamp(120px, 26vw, 220px);
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+.landing .start-btn {
+  padding: 12px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--border, #2a2f38);
+  background: var(--primary, #4da3ff);
+  color: #06121f;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  box-shadow: var(--shadow, 0 10px 30px rgba(0,0,0,0.35));
+}
+.landing .start-btn:active { transform: translateY(1px); }
+
+/* Fade away on start */
+.landing.is-fading { opacity: 0; pointer-events: none; }
+
+/* Accessibility: reduce motion */
+@media (prefers-reduced-motion: reduce) {
+  .landing { transition: opacity 0.01ms linear; }
+  .landing .stars, .landing .stars:before, .landing .stars:after { animation: none; }
+}
+
+body {
+    scrollbar-color: gray transparent;
+}
+
+.asteroid-modal {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  width: 360px;
+  max-height: 52vh;
+  background: rgba(16,18,22,0.92);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  border-radius: 14px;
+  display: none; /* hidden until opened */
+  z-index: 2000;
+  overflow: hidden;
+}
+.asteroid-modal.expanded {
+  right: 50%;
+  bottom: 50%;
+  transform: translate(50%, 50%);
+  width: min(720px, 86vw);
+  max-height: min(72vh, 820px);
+}
+.asteroid-modal .modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.asteroid-modal .title {
+  font-weight: 700; font-size: 14px; color: var(--text); flex: 1; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
+}
+.asteroid-modal .grow-left {
+  margin-right: auto;
+}
+.asteroid-modal .icon-btn {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.asteroid-modal .icon-btn:hover { filter: brightness(1.07); }
+.asteroid-modal .modal-body {
+  padding: 12px;
+  overflow: auto;
+  max-height: calc(52vh - 46px); /* default minus header */
+}
+.asteroid-modal.expanded .modal-body {
+  max-height: calc(72vh - 46px);
+}
+
+.inline-input{
+  width: 92px;
+  height: 34px;
+  padding: 6px 10px;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  outline: none;
+  box-shadow: none;
+}
+.inline-input:focus{
+  border-color: var(--accent);
+}
+.inline-input::-webkit-outer-spin-button,
+.inline-input::-webkit-inner-spin-button{ -webkit-appearance: none; margin: 0; }
+.inline-input[type=number]{ -moz-appearance: textfield; }
+
+  </style>
+</head>
+<body>
+    <div class="landing" id="landing">
+        <div class="stars"></div>
+        <div class="center">
+          <img src="logo.png" alt="Logo" class="logo" />
+          <button class="start-btn" id="startBtn">Start</button>
+        </div>
+      </div>
+  <aside class="left">
+    <button id="togglePanel" class="toggle-panel" title="Collapse/Expand">⟨</button>
+    <h1>Down to Earth</h1>
+    <div class="sub">Choose impact parameters and click on the satellite map to select the location.</div>
+
+    <div class="group" id="city-style" style="display:none">
+        <h3 style="margin:0 0 8px">City Population Style</h3>
+        <div class="btn-row">
+            <button id="city-light" class="btn">Light</button>
+            <button id="city-dark" class="btn secondary">Dark</button>
+          </div>
+      </div>
+
+    <div class="group" id="preset-group">
+        <label style="margin-top:0">Asteroid presets</label>
+        <input id="preset-search" type="text" placeholder="Search name…" style="width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:var(--panel-2);color:var(--text)" />
+        <ul id="preset-list" style="list-style:none;margin:10px 0 0;padding:0;max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:12px;background:var(--panel-2)"></ul>
+        <div class="footnote">Values shown on hover; click to apply diameter & velocity.</div>
+      </div>
+
+    <div class="group">
+        <label>Diameter (m)
+            <input id="diam-val" class="inline-input" type="number" inputmode="numeric" min="1" step="5" value="100" />
+
+          </label>
+      <input id="diam" type="range" min="0" max="100000" value="100" step="5" />
+
+      <label>Velocity (km/s)
+        <input id="vel-val" class="inline-input" type="number" inputmode="decimal" min="0.10" step="5" value="20.0" />
+
+      </label>
+      <input id="vel" type="range" min="5" max="72" value="20" step="0.1" />
+
+      <!-- <label>Density (kg/m³) <span id="dens-val">3000</span></label>
+      <input id="dens" type="range" min="300" max="9000" value="3000" step="10" /> -->
+
+      <label>Impact angle (°) <span id="angle-val">45</span></label>
+      <input id="angle" type="range" min="5" max="90" value="45" step="1" />
+
+      <div class="row">
+        <button id="launch" class="btn">Launch</button>
+        <button id="reset" class="btn secondary">Reset</button>
+      </div>
+    </div>
+
+    <div class="group">
+        <div class="stats-grid">
+            <div class="stat"><div class="k">Mass (kg)</div><div class="v" id="mass">—</div></div>
+            <div class="stat"><div class="k">Energy (J)</div><div class="v" id="energy">—</div></div>
+            <div class="stat"><div class="k">Energy (Mt TNT)</div><div class="v" id="mt">—</div></div>
+          
+            <div class="stat"><div class="k">Crater radius (km)</div><div class="v" id="r-crater">—</div></div>
+          
+            <div class="stat"><div class="k">Thermal 3rd-degree (km)</div><div class="v" id="th-severe">—</div></div>
+            <div class="stat"><div class="k">Thermal 2nd-degree (km)</div><div class="v" id="th-mild">—</div></div>
+          
+            <div class="stat"><div class="k">Airblast 20 psi (km)</div><div class="v" id="ab-3">—</div></div>
+            <div class="stat"><div class="k">Airblast 5 psi (km)</div><div class="v" id="ab-5">—</div></div>
+            <div class="stat"><div class="k">Airblast 1 psi (km)</div><div class="v" id="ab-1">—</div></div>
+          
+            <div class="stat"><div class="k">Seismic M</div><div class="v" id="eq-M">—</div></div>
+
+            <div class="stat"><div class="k">Affected Population (baseline)</div><div class="v" id="pop-affected">—</div></div>
+            <div class="stat"><div class="k">Estimated Casualties (baseline)</div><div class="v" id="casualties">—</div></div>
+          </div>
+
+      <!-- <div class="legend">
+        <div class="tag"><span class="dot" style="background: var(--ring-red);"></span> Extreme</div>
+        <div class="tag"><span class="dot" style="background: var(--ring-yellow);"></span> Danger</div>
+        <div class="tag"><span class="dot" style="background: var(--ring-green);"></span> Safe</div>
+        <div class="tag"><span class="dot" style="background: var(--ring-blue);"></span> Unaffected</div>
+      </div> -->
+
+      <div class="footnote">
+        Calculations are approximate for visualization only.
+      </div>
+    </div>
+  </aside>
+
+  <main class="map-wrap">
+    <div id="map"></div>
+    <canvas id="fx"></canvas>
+    <div class="overlay-controls">
+        <label><input id="chk-air"    type="checkbox"  /> Airblast</label>
+        <label><input id="chk-thermal"type="checkbox" checked /> Thermal</label>
+        <label><input id="chk-cities"type="checkbox"  /> City Population View</label>
+      </div>
+    <div class="pill">Click on the map to set the impact location</div>
+
+    <!-- Asteroid Info Modal -->
+<div id="asteroidModal" class="asteroid-modal" aria-modal="true" role="dialog">
+    <div class="modal-head">
+      <button id="asteroidExpand" class="icon-btn grow-left" title="Expand/Collapse">⤢</button>
+      <div class="title" id="asteroidTitle">Asteroid</div>
+      <button id="asteroidClose" class="icon-btn" title="Close">✕</button>
+    </div>
+    <div class="modal-body" id="asteroidBody">
+      <!-- Paste the long predefined text via JS content below -->
+    </div>
+  </div>
+
+  </main>
+
+  <script>
+    // ---- Config ----
+    const apiUrl = "http://127.0.0.1:8000/impact";
+
+    // ---- UI elements ----
+    const diam = document.getElementById('diam');
+    const vel  = document.getElementById('vel');
+    const dens = document.getElementById('dens');
+    const angle= document.getElementById('angle');
+
+    const diamVal = document.getElementById('diam-val');
+    const velVal  = document.getElementById('vel-val');
+    const densVal = document.getElementById('dens-val');
+    const angleVal= document.getElementById('angle-val');
+
+    const panel = document.querySelector('.left');
+    const toggleBtn = document.getElementById('togglePanel');
+
+    const chkAir     = document.getElementById('chk-air');
+    const chkThermal = document.getElementById('chk-thermal');
+
+    const presetSearch = document.getElementById('preset-search');
+  const presetList   = document.getElementById('preset-list');
+
+  const API_BASE    = "http://127.0.0.1:8000";
+  const API_IMPACT  = apiUrl; // existing variable
+  const API_POP     = `${API_BASE}/population`;
+  const API_CITYPTS = `${API_BASE}/citypoints`;
+  const API_TOPCITIES = `${API_BASE}/topcities`;
+
+  function clampNum(v, lo, hi){
+  const n = Number(v);
+  if (!isFinite(n)) return lo;
+  return Math.min(Math.max(n, lo), hi);
+}
+
+// When user edits the number boxes, reflect back to sliders and (optionally) compute
+diamVal?.addEventListener('change', () => {
+  const lo = Number(diam.min || 1), hi = Number(diam.max || 100000), st = Number(diam.step || 1);
+  let val = clampNum(diamVal.value, lo, hi);
+  if (st > 0) val = Math.round(val / st) * st;
+  diam.value = String(val);
+  diamVal.value = String(val);
+});
+
+velVal?.addEventListener('change', () => {
+  const lo = Number(vel.min || 0.10), hi = Number(vel.max || 72.00), st = Number(vel.step || 0.01);
+  let val = clampNum(velVal.value, lo, hi);
+  if (st > 0){ val = Math.round(val / st) * st; val = Number(val.toFixed(10)); }
+  vel.value = String(val);
+  velVal.value = String(val);
+});
+
+// Make Enter commit immediately
+diamVal?.addEventListener('keydown', (e)=>{ if (e.key === 'Enter'){ e.preventDefault(); diamVal.dispatchEvent(new Event('change')); }});
+velVal ?.addEventListener('keydown', (e)=>{ if (e.key === 'Enter'){ e.preventDefault(); velVal .dispatchEvent(new Event('change')); }});
+
+  // --- helpers for formatting ---
+  function fmtPeople(n){
+    if (n == null || isNaN(n)) return '—';
+    if (n < 1e3) return Math.round(n).toLocaleString();
+    if (n < 1e6) return (n/1e3).toFixed(1)+'k';
+    if (n < 1e9) return (n/1e6).toFixed(1)+'M';
+    return (n/1e9).toFixed(2)+'B';
+  }
+
+  async function getPopulationInCircle(lat,lng,rKm){
+    const qs = new URLSearchParams({lat:String(lat), lng:String(lng), radius_km:String(rKm)});
+    const r = await fetch(`${API_POP}?${qs}`);
+    if (!r.ok) throw new Error('Population service error');
+    const d = await r.json();
+    return Math.max(0, Number(d.people)||0);
+  }
+
+  // --- casualty model using THERMAL rings only ---
+  // Map 3rd-degree burns => "severe" zone, 2nd-degree => "moderate" zone.
+  // Keep prior fatality rates for continuity (renamed for clarity):
+  const FATAL_BURN3 = 0.35;  // analogous to previous "severe"
+  const FATAL_BURN2 = 0.08;  // analogous to previous "moderate"
+
+  async function computeCasualtiesThermal(lat, lng, thermalR){
+    const r3 = Number(thermalR?.burn_3rd) || 0;  // km
+    const r2 = Number(thermalR?.burn_2nd) || 0;  // km
+    if (r2 <= 0) return { affected: 0, casualties: 0 };
+
+    // Pop inside each ring
+    // affected baseline = inside 2nd-degree (outer) ring
+    const [P3, P2] = await Promise.all([
+      getPopulationInCircle(lat,lng,r3),
+      getPopulationInCircle(lat,lng,r2),
+    ]);
+
+    const ringBurn3 = Math.max(0, P3);
+    const ringBurn2Shell = Math.max(0, P2 - P3);
+
+    const casualties = Math.round(ringBurn3 * FATAL_BURN3 + ringBurn2Shell * FATAL_BURN2);
+    return { affected: P2, casualties };
+  }
+
+  let PRESETS = []; // [{name, size_km, vel_kps}]
+fetch('http://127.0.0.1:8000/info', { method: 'POST' })
+  .then(r => r.json())
+  .then(j => {
+    const d = j?.data || {};
+    // Map names to their respective values (size in km, velocity in km/s)
+    PRESETS = (d.names || []).map((name, i) => ({
+      name,
+      size_km: (d.size || [])[i],
+      vel_kps: (d.velocity || [])[i]
+    })).filter(p => Number.isFinite(p.size_km) && Number.isFinite(p.vel_kps));
+
+    // ✅ Set featured AFTER PRESETS exists
+    FEATURED_ASTEROID_NAMES = new Set(PRESETS.slice(0, 3).map(p => p.name));
+
+    renderPresetList();
+  });
+
+    const asteroidModal  = document.getElementById('asteroidModal');
+const asteroidTitle  = document.getElementById('asteroidTitle');
+const asteroidBody   = document.getElementById('asteroidBody');
+const asteroidClose  = document.getElementById('asteroidClose');
+const asteroidExpand = document.getElementById('asteroidExpand');
+
+// Will be filled once PRESETS arrive:
+
+const ASTEROID_TEXT = {
+  // 🔻🔻🔻 PASTE YOUR LONG PREDEFINED TEXT STRINGS HERE 🔻🔻🔻
+  // Use the exact names of the first three PRESETS as keys (they are shown in the left list).
+  // Example:
+  "Bennu": "Stats:\n- 4.6 billion Relatively small asteroid with an orbit that crosses earth’s by 299,000 km every 6 years.\n- Composition: clay and silicate rocks, with significant amounts of carbon and organic materials.\n- Size: ~500 meters in diameter.\n- Orbit: It’s a near-Earth asteroid (NEA), with an orbit that crosses Earth’s, which is why it was chosen for NASA’s OSIRIS-REx mission.\n- Composition: OSIRIS-REx found organic molecules, carbonates, sulfides, and water-bearing minerals in Bennu’s samples (NASA, 2023).\n\nDescription:\nC-type (carbonaceous asteroids):  \n\n- Most common type in our solar system’s outer region of the asteroid belt, making up 75% of the known population. \n- Composition: clay and silicate rocks, with significant amounts of carbon, as well as clay, water ice and other volatiles.  \n- Density: typically 1.3–2.2 g/cm³ which is less dense compared to the S-type or the M-type asteroids which makes them more fragile – sometimes they break up in the atmosphere.\n- Location: outer region of the main asteroid belt, located between Mars and Jupiter.\n- Appearance: their high carbon content gives them a very low albedo. This makes them appear extremely dark and less reflective than other asteroid types making them harder to detect until they get closer to Earth.\n\nHow it F’s up the planet:\nA C-type asteroid impact is dangerous not only for the kinetic energy (blast, crater, tsunamis) but also because its carbon- and volatile-rich material can mess up Earth’s atmosphere and climate, making survival harder long after the impact.\n\nImpact size and effect:\n<50 m C-type → Airburst, localized destruction\n100–500 m → Regional devastation, tsunami if ocean impact.\n1–10 km → Global catastrophe/massive craters (climate collapse, extinctions) example: extinction of dinosaurs.\n>10 km → Planet-altering, mass extinction-level event.\n\nBecause they contain carbon and volatiles, a C-type impact would release:\n• Carbon dioxide (CO₂) and carbon monoxide (CO) → greenhouse gases.\n• Soot and dust → blocking sunlight (“impact winter”), cooling the Earth for months to years.\n• Water vapor → enhancing greenhouse warming afterward.\nThis combo can cause short-term global cooling followed by long-term warming.\n\nAtmospheric and climate effects:\n- C-type impact would release CO₂ & CO → greenhouse gases.\n- Soot and dust block sunlight (“impact winter”) cooling the Earth for months to years.\n- Water vapor enhances greenhouse warming afterward.\nThis combo can cause short-term global cooling followed by long-term warming.\n\nAtmospheric Impact:\nBecause of their carbon- and volatile-rich composition, C-type asteroids don’t just deliver impact energy—they also release gases, soot, and dust into the atmosphere. This combination can block sunlight and trigger an “impact winter”, cooling the planet in the short term. Over time, the release of carbon dioxide and water vapor can swing the climate back toward greenhouse warming. Alongside the immediate blast and crater, their impacts are especially dangerous because they can disrupt Earth’s atmosphere and climate on a global scale.\n\nIf the asteroid is large enough (≥5–10 km), the effects are global: crop failures, ecosystem collapse, acid rain, ocean chemistry disruption.\n\nChicxulub impact (likely a C-type) caused up to 75% of all species to go extinct.",
+  
+  "Itokawa": "Stats:\nDiscovered: September 26th, 1998, New Mexico.\nAverage Diameter: 330 m.\nMass: 35 B kg.\nDensity: 1.9 g/cm³.\nDistance from Earth: 1.7 Astronomical Unit.\nRelative velocity to Sun: 33.72 km/s.\nRotation Period: 12.13 hrs.\nOrbital Period: 1.53 years.\nClosest distance to Sun: 0.95 AU / Furthest: 1.7 AU.\nInclination: 1.621°.\nNearest distance to Earth: 6,073,476 km.\nClassified as a PHO (potentially hazardous object).\nNext approach to Earth: March 6th 2030.\n\nChemical Composition:\nLL Ordinary Chondrites (Low-iron, Low-metal) — most common meteorites.\nOlivine & Pyroxene: Silicate minerals rich in magnesium & iron — melt & vaporize quickly upon atmospheric entry, causing the asteroid to shatter and create an airburst instead of crater forming, generating strong heat & light over tens to hundreds of km. These shock waves pressure olivine into ringwoodite (usually found deep in Earth).\nPlagioclase: Silicate minerals containing sodium & calcium aluminum silicates, common in Earth’s crust, making up much of Itokawa and other S-type asteroids. Since aluminum & sodium reflect light differently, they contribute to S-type asteroids’ unique signature. Their low melting point contributes to airburst and fragmentation, creating glassy fragments.\nIron Sulfide and Iron-Nickel Metal: weak components that melt at low temperatures, producing sulfur gas that contributes to local air pollution.\n\nDescription:\nS-Type (silicaceous asteroids):\nS-type asteroids are very common in our solar system’s inner main belt and are the source of most meteorites found on Earth. They are mainly composed of silicate materials and nickel-iron. S-type asteroids usually have albedo values between 0.10 and 0.22, making them easier to spot than C-type.\n\nItokawa was the first asteroid from which samples were collected and brought to Earth, despite the hardships the spacecraft Hayabusa (Japanese word for falcon) faced during the mission. The mission was first launched in 2005, and the samples finally arrived on Earth on June 13, 2010.\n\nAccording to analysis of these samples, Itokawa is part of the remains of a larger object due to a collision. Some captured dust particles show signs of cooling down after formation inside a larger object at 800° Celsius, requiring a diameter greater than 20 km — 40 times larger than Itokawa. In addition, Itokawa has a boulder 50 m high, too large to have formed from a crater impact, suggesting a rubble-pile structure.",
+  
+  "Amun": "Stats:\nDiameter: 3.34 km.\nDiscovered: March 4th, 1986.\nDistance from Earth (August 12, 2025): 2.16 AU.\nVelocity: undetermined.\nRotation Period: 2.53029 hrs.\nOrbital Period: 0.97 years (~350 days).\nClosest point to Sun: 0.7 AU.\nInclination: 23.3°.\nOther info: still not determined since no mission was sent yet.\n\nDescription:\nM-type (metal asteroids):\n- Make up about 8% of known asteroids.\n- Density: ≈5–8 g/cm³.\n- Composition: made up of metals like nickel-iron.\n- Appearance: relatively bright, reflect a moderate amount of sunlight, appear reddish with flat surfaces, lacking the distinct features of other asteroid types.\n- Origin: exposed metallic cores of proto-planets stripped of their outer layers.\n- Location: typically found in the middle region of the main asteroid belt, though their distribution overlaps with others.\n- Fun fact: M-type asteroids are considered the likely source of iron meteorites found on Earth.\n\nAtmospheric entry: Much more likely to survive intact—they don’t fragment easily.\nKinetic Energy: Their large mass causes more destructive impact for the same size compared to C- or S-types.\nCratering: M-types produce very large craters and can penetrate deeper into Earth’s crust.\nClimate Effects: Unlike C-types, they don’t carry much carbon or water, so less gas release. The main destruction comes from energy and debris ejection.\n\nBecause of their high density and metallic composition, M-type asteroids deliver far more kinetic energy on impact than C- or S-types of the same size. This enormous energy allows them to create very large, deep craters as they punch into Earth’s crust, often exposing or vaporizing rock in the process. The collision also generates intense shockwaves and thermal radiation, leading to widespread localized heating, melting, and destruction around the impact zone.\n\nImpact size and effect:\n<50 m → Meteor Crater-level event (like Arizona’s Barringer Crater, likely from a metallic impactor).\n100–500 m → Regional destruction, deep craters, tsunamis if ocean impact.\n1–10 km → Global catastrophe, but less climate change effect than a C-type.\n>10 km → Mass extinction level due to sheer kinetic energy."
+
+  // 🔺🔺🔺 END OF PASTE AREA 🔺🔺🔺
+};
+
+
+function openAsteroidModal(name){
+  asteroidTitle.textContent = name || 'Asteroid';
+  const txt = ASTEROID_TEXT[name] || '(No text provided yet. Add it in ASTEROID_TEXT[name].)';
+  // large text, safe as textContent or basic HTML if you trust the source.
+  // Use innerText to keep it simple and scrollable text.
+  asteroidBody.innerText = txt;
+  asteroidModal.classList.remove('expanded');
+  asteroidModal.style.display = 'block';
+}
+function closeAsteroidModal(){
+  asteroidModal.style.display = 'none';
+}
+function toggleAsteroidExpand(){
+  asteroidModal.classList.toggle('expanded');
+}
+asteroidClose?.addEventListener('click', closeAsteroidModal);
+asteroidExpand?.addEventListener('click', toggleAsteroidExpand);
+
+    (function () {
+    const landing = document.getElementById('landing');
+    const startBtn = document.getElementById('startBtn');
+    if (!landing || !startBtn) return;
+
+    function hideLanding() {
+      // fade
+      landing.classList.add('is-fading');
+      // after the transition, remove it and fix map sizing
+      const onEnd = () => {
+        landing.removeEventListener('transitionend', onEnd);
+        try { landing.remove(); } catch {}
+        // Leaflet needs a reflow after overlay removal
+        if (window.map && typeof map.invalidateSize === 'function') {
+          setTimeout(() => map.invalidateSize(), 50);
+        }
+      };
+      landing.addEventListener('transitionend', onEnd);
+      // fallback (in case transitionend doesn’t fire)
+      setTimeout(onEnd, 1100);
+    }
+
+    startBtn.addEventListener('click', hideLanding);
+    // Also allow Enter key on button for accessibility
+    startBtn.addEventListener('keyup', (e) => { if (e.key === 'Enter') hideLanding(); });
+  })();
+
+  function renderPresetList(filterText = '') {
+    const q = filterText.trim().toLowerCase();
+    const items = PRESETS.filter(p => p.name.toLowerCase().includes(q));
+    presetList.innerHTML = items.map(p => `
+      <li class="preset-item" data-name="${p.name}" style="padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer">
+        ${p.name}
+        <span class="hint" style="float:right;color:var(--muted)"></span>
+      </li>
+    `).join('');
+    [...presetList.querySelectorAll('.preset-item')].forEach((el) => {
+      const p = PRESETS.find(x => x.name === el.dataset.name);
+      el.title = `Diameter ≈ ${(p.size_km*1000).toFixed(0)} m\nVelocity ≈ ${p.vel_kps.toFixed(2)} km/s`;
+      el.addEventListener('click', () => {
+        diam.value = Math.max(1, Math.round(p.size_km * 1000)); // km → m
+vel.value  = p.vel_kps.toFixed(2);
+if (diamVal && diamVal.tagName === 'INPUT') diamVal.value = String(diam.value); else diamVal.textContent = diam.value;
+if (velVal  && velVal.tagName  === 'INPUT') velVal.value  = String(vel.value);  else velVal.textContent  = vel.value;
+
+  // NEW: Show modal only for the first three presets (by name)
+  if (FEATURED_ASTEROID_NAMES.has(p.name)) {
+    openAsteroidModal(p.name);
+  }
+});
+    });
+  }
+  presetSearch.addEventListener('input', (e) => renderPresetList(e.target.value));
+
+  chkAir.addEventListener('change', () => {
+  SHOW_AIR = chkAir.checked;
+  resetAirParticles();
+  if (window.__lastRingsData) redrawFromCache();
+  if (SHOW_AIR) startAirShockLoop();
+  else          stopAirShockLoop();
+});
+    chkThermal.addEventListener('change',() => { SHOW_THERMAL = chkThermal.checked; if (window.__lastRingsData) redrawFromCache(); });
+
+    function redrawFromCache(){
+    const d = window.__lastRingsData;
+    if (!d) return;
+    drawRings(d.latlng, d.radiiKm, d.effects);
+    }
+
+
+    toggleBtn.addEventListener('click', () => {
+    panel.classList.toggle('collapsed');
+    toggleBtn.textContent = panel.classList.contains('collapsed') ? '⟩' : '⟨';
+    // Let layout settle, then fix Leaflet size
+    setTimeout(() => map.invalidateSize(), 360);
+    });
+
+    [ ['input', diam, diamVal], ['input', vel, velVal], ['input', angle, angleVal] ]
+  .forEach(([ev, el, out]) => el.addEventListener(ev, ()=> {
+    if (out && out.tagName === 'INPUT') out.value = el.value;
+    else out.textContent = el.value;
+  }));
+
+
+    // ---- Map (Leaflet + Esri World Imagery) ----
+    const map = L.map('map', {
+      worldCopyJump: true,
+      minZoom: 2,
+      maxZoom: 18
+    }).setView([20, 10], 3);
+
+    // --- Base layers ---
+const baseSat        = L.esri.basemapLayer('Imagery').addTo(map);  // you already add this
+const baseCartoLight = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; Carto' });
+const baseCartoDark  = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',  { attribution: '&copy; Carto' });
+
+// --- City overlays ---
+let cityHeat = null;
+let cityDots = null;
+let legendEl = null;
+let cityTheme = 'light';
+
+async function ensureCityHeat(){
+  if (cityHeat) return;
+  const r = await fetch(API_CITYPTS);
+const d = await r.json();
+const pts = (d.points || []).map(p => [p[0], p[1], p[2]]);
+cityHeat = L.heatLayer(pts, {
+  // tighter kernel so hotspots don't merge across regions
+  radius: 16,      // ↓ smaller footprint per point
+  blur: 5,        // ↓ less smearing
+  maxZoom: 7,
+  minOpacity: 0.06, // faint background but not dominant
+
+  // make "red" reserved for the very top intensities only
+  // and widen the mid-range separation
+  gradient: {
+    0.00: '#35c728', // light green
+    0.35: '#6fa2ff', // blue
+    0.60: '#ffc857', // amber
+    0.85: '#ff7b39', // orange
+    0.97: '#ff4d2a', // bright orange-red
+    1.00: '#d61919'  // red (only true peaks)
+  }
+});
+}
+
+async function ensureCityDots(){
+  if (cityDots) return;
+  cityDots = L.layerGroup();
+  const r = await fetch(API_TOPCITIES);
+  const d = await r.json();
+  for (const c of (d.cities || [])) {
+    const pop = Number(c.population)||0;
+    const radius = Math.max(2, Math.min(14, Math.sqrt(pop)/300)); // simple size
+    L.circleMarker([c.lat, c.lon], {
+      radius, weight: 1.2, color: 'rgba(255,255,255,0.9)', fillOpacity: 0.0
+    }).bindTooltip(`${c.city}, ${c.country} · ${pop >= 1e6 ? (pop/1e6).toFixed(1)+'M' : pop.toLocaleString()}`)
+      .addTo(cityDots);
+  }
+}
+
+function addLegend(){
+  if (legendEl) return;
+  legendEl = L.control({position:'bottomleft'});
+  legendEl.onAdd = function(){
+    const div = L.DomUtil.create('div');
+    div.style.cssText = `
+      background: rgba(0,0,0,0.75); color:#fff; padding:10px 12px;
+      border-radius:8px; font-size:12px; line-height:1.5; border:1px solid #2a2f38;
+    `;
+    div.innerHTML = `
+      <div style="font-weight:600;margin-bottom:6px">City population intensity (Natural Earth)</div>
+      <div><span style="color:#2ecc71">●</span> &lt; 100k</div>
+      <div><span style="color:#3498db">●</span> 100k–1M</div>
+      <div><span style="color:#f39c12">●</span> 1–5M</div>
+      <div><span style="color:#e74c3c">●</span> ≥ 5M</div>
+      <div style="margin-top:6px;opacity:.8">Heat uses percentile scaling; faint white dots show top cities</div>
+    `;
+    return div;
+  };
+  legendEl.addTo(map);
+}
+function removeLegend(){ if (legendEl){ legendEl.remove(); legendEl=null; } }
+
+function showCityBase(){
+  if (cityTheme === 'light') {
+    if (!map.hasLayer(baseCartoLight)) baseCartoLight.addTo(map);
+    if (map.hasLayer(baseCartoDark)) map.removeLayer(baseCartoDark);
+  } else {
+    if (!map.hasLayer(baseCartoDark)) baseCartoDark.addTo(map);
+    if (map.hasLayer(baseCartoLight)) map.removeLayer(baseCartoLight);
+  }
+  if (map.hasLayer(baseSat)) map.removeLayer(baseSat);
+}
+
+// Checkbox handlers
+const chkCities = document.getElementById('chk-cities');
+const styleBox  = document.getElementById('city-style');   // added group in the left panel
+const btnLight  = document.getElementById('city-light');
+const btnDark   = document.getElementById('city-dark');
+function setCityTheme(theme){
+  cityTheme = theme;
+  // pressed button looks like "Launch" => .btn  (no .secondary)
+  // not pressed looks like "Reset"    => .btn.secondary
+  if (theme === 'light') {
+    btnLight?.classList.remove('secondary');
+    btnDark ?.classList.add('secondary');
+  } else {
+    btnDark ?.classList.remove('secondary');
+    btnLight?.classList.add('secondary');
+  }
+  if (chkCities?.checked) showCityBase();
+}
+btnLight?.addEventListener('click', () => setCityTheme('light'));
+btnDark ?.addEventListener('click', () => setCityTheme('dark'));
+
+// ensure initial visual state matches pressed=Light
+setCityTheme('light');
+chkCities?.addEventListener('change', async () => {
+  if (chkCities.checked) {
+    showCityBase();
+    await ensureCityHeat(); await ensureCityDots();
+    if (cityHeat && !map.hasLayer(cityHeat)) cityHeat.addTo(map);
+    if (cityDots && !map.hasLayer(cityDots)) cityDots.addTo(map);
+    addLegend();
+    if (styleBox) styleBox.style.display = '';
+  } else {
+    // back to Impact view
+    if (!map.hasLayer(baseSat)) baseSat.addTo(map);
+    if (map.hasLayer(baseCartoLight)) map.removeLayer(baseCartoLight);
+    if (map.hasLayer(baseCartoDark))  map.removeLayer(baseCartoDark);
+    if (cityHeat && map.hasLayer(cityHeat)) map.removeLayer(cityHeat);
+    if (cityDots && map.hasLayer(cityDots)) map.removeLayer(cityDots);
+    removeLegend();
+    if (styleBox) styleBox.style.display = 'none';
+  }
+});
+
+    map.createPane('effects');
+    map.getPane('effects').style.zIndex = 651;   // canvas is 650
+    map.getPane('effects').style.pointerEvents = 'none';
+
+    const pinIcon = L.icon({
+        iconUrl: 'pin.png', // or rename to 'pin.png'
+        iconSize: [45, 45],
+        iconAnchor: [18, 36],
+        popupAnchor: [0, -36]
+    });
+
+    L.esri.basemapLayer('Imagery').addTo(map);
+    // Optional labels overlay:
+    // L.esri.basemapLayer('ImageryLabels').addTo(map);
+
+    let impactLatLng = null;
+    let impactMarker = null;
+
+    const ringsGroup  = L.featureGroup().addTo(map);   // misc labels, etc.
+const craterGroup = L.featureGroup().addTo(map);   // crater only (persistent across toggles)
+
+const dangerGroup  = L.featureGroup().addTo(map);  // (reused for thermal filled rings)
+const airGroup     = L.featureGroup().addTo(map);
+const thermalGroup = L.featureGroup().addTo(map);
+
+    
+    // visibility flags
+    SHOW_AIR = false, SHOW_THERMAL = true;
+
+    const fx = document.getElementById('fx');
+const fxCtx = fx.getContext('2d');
+
+function resizeFx() {
+  // force the canvas' CSS size to 100% of the map container
+  fx.style.width = '100%';
+  fx.style.height = '100%';
+
+  // use the MAP element's box for sizing, not the canvas' (which might be 0 initially)
+  const mapEl = document.getElementById('map');
+  const bb = mapEl.getBoundingClientRect();
+  const r = window.devicePixelRatio || 1;
+
+  fx.width  = Math.max(1, Math.round(bb.width  * r));
+  fx.height = Math.max(1, Math.round(bb.height * r));
+
+  // draw in CSS pixel space
+  fxCtx.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+resizeFx();
+window.addEventListener('resize', () => { resizeFx(); map.invalidateSize(); });
+map.on('resize', resizeFx);
+
+    map.on('move zoom', () => { // keep canvas in sync when map moves
+    // nothing to do here except redraw on next frame
+    });
+
+    // --- world/geo helpers ---
+    const R_EARTH = 6371000; // meters
+    function destLL(latlng, dx_m, dy_m) {
+    // dx: east-west (m), dy: north-south (m)
+    const dLat = (dy_m / R_EARTH) * (180/Math.PI);
+    const dLng = (dx_m / (R_EARTH * Math.cos(latlng.lat * Math.PI/180))) * (180/Math.PI);
+    return L.latLng(latlng.lat + dLat, latlng.lng + dLng);
+    }
+    function metersToPixelsRadius(centerLL, meters) {
+    if (meters <= 0) return 0;
+    const edge = destLL(centerLL, meters, 0);
+    const p0 = map.latLngToLayerPoint(centerLL);
+    const p1 = map.latLngToLayerPoint(edge);
+    return p0.distanceTo(p1);
+    }
+
+    // --- FX state (fed by last API call) ---
+    let FX_CENTER = null;     // L.LatLng
+    let FX_CRATER_M = 0;      // meters
+    let FX_TH_SEV_M = 0;      // meters (thermal severe)
+    let FX_AB1_M = 0, FX_AB3_M = 0, FX_AB5_M = 0; // airblast rings in meters
+
+    let airShockTimer = null;
+const SHOCK_GAP_MS = 400; // pause between waves (after one fully finishes)
+
+function startAirShockLoop(){
+  // Avoid multiple loops
+  if (airShockTimer) return;
+
+  const launch = () => {
+    // Only run if air is visible and we have a valid impact + ring size
+    if (SHOW_AIR && FX_CENTER && FX_AB1_M > 0 && window.__lastEffects) {
+      // Duration matches airblastShockwave default; tweak if you want faster/slower
+      airblastShockwave(FX_CENTER, window.__lastEffects, 3200);
+      airShockTimer = setTimeout(launch, 3200 + SHOCK_GAP_MS);
+    } else {
+      // conditions not met → stop
+      stopAirShockLoop();
+    }
+  };
+
+  launch();
+}
+
+function stopAirShockLoop(){
+  if (airShockTimer) {
+    clearTimeout(airShockTimer);
+    airShockTimer = null;
+  }
+}
+
+    // particles for airblast
+    const airParticles = [];
+    function resetAirParticles(){ airParticles.length = 0; }
+
+    function clearRings() {
+        ringsGroup.clearLayers();
+        dangerGroup.clearLayers();
+        airGroup.clearLayers();
+        thermalGroup.clearLayers();
+        craterGroup.clearLayers();
+        if (impactMarker) impactMarker.remove();
+        impactMarker = null;
+        }
+    map.on('click', (e) => {
+    impactLatLng = e.latlng;
+        if (impactMarker) impactMarker.remove();
+        impactMarker = L.marker(impactLatLng, { icon: pinIcon }).addTo(map);
+    });
+
+    // ---- Stats UI ----
+    function fmtExp(n){ try { return Number(n).toExponential(3); } catch { return '—'; } }
+    function fmt2(n){ try { return Number(n).toFixed(2); } catch { return '—'; } }
+
+    function updateStats(data){
+  document.getElementById('mass').textContent   = fmtExp(data.mass_kg);
+  document.getElementById('energy').textContent = fmtExp(data.kinetic_energy_joules);
+  document.getElementById('mt').textContent     = fmt2(data.kinetic_energy_megatons_tnt);
+
+  // Crater & effects
+  document.getElementById('r-crater').textContent = fmt2(data.effects?.crater_radius_km ?? 0);
+
+  const th = data.effects?.thermal?.radii_km || {};
+  const ab = data.effects?.airblast?.radii_km || {};
+  const eq = data.effects?.seismic || {};
+
+  document.getElementById('th-severe').textContent = fmt2(th.burn_3rd ?? 0);
+  document.getElementById('th-mild').textContent   = fmt2(th.burn_2nd ?? 0);
+
+  document.getElementById('ab-3').textContent = fmt2(ab.p20_km ?? 0);
+  document.getElementById('ab-5').textContent = fmt2(ab.p5_km ?? 0);
+  document.getElementById('ab-1').textContent = fmt2(ab.p1_km ?? 0);
+
+  document.getElementById('eq-M').textContent = (eq.magnitude_M != null)
+    ? Number(eq.magnitude_M).toFixed(2)
+    : '—';
+}
+
+
+
+    // ---- Draw Rings on real map (meters) ----
+    function drawRings(latlng, _radiiKmIgnored, effects){
+  // clear ring layers (keep marker)
+  ringsGroup.clearLayers();
+  dangerGroup.clearLayers();   // we reuse this group for THERMAL filled rings
+  airGroup.clearLayers();
+  thermalGroup.clearLayers();
+
+  // ---- CRATER (draw immediately, darker) ----
+//   const craterKm = effects?.crater_radius_km ?? 0;
+//   if (craterKm > 0) {
+//     const crater = L.circle(latlng, {
+//       radius: craterKm * 1000,
+//       color: '#1b0e0e',
+//       weight: 2.5,
+//       fillColor: 'rgba(15,9,9,0.65)',
+//       fillOpacity: 0.65
+//     });
+//     ringsGroup.addLayer(crater);
+//   }
+
+  // ---- THERMAL (filled orange shades + labels) ----
+  if (SHOW_THERMAL) {
+    const th = effects?.thermal?.radii_km || {};
+    const levels = [
+  { key:'fatal_50', label:'🔴 fatal (incinerated)',  stroke:'#4a1a00', fill:'rgba(255,120,0,0.40)' },
+  { key:'clothes',  label:'🟠 Clothes catch fire',           stroke:'#6a3c05', fill:'rgba(255,150,0,0.30)' },
+  { key:'burn_3rd', label:'🟡 3rd-degree burns',         stroke:'#7b6008', fill:'rgba(255,180,0,0.20)' },
+  { key:'burn_2nd', label:'🟢 2nd-degree burns',         stroke:'#2b3d2f', fill:'rgba(255,210,0,0.12)' }
+];
+    levels.forEach((lv, idx) => {
+      const r = (th[lv.key] ?? 0) * 1000;
+      if (r <= 0) return;
+      const circle = L.circle(latlng, {
+        radius: r,
+        color: lv.stroke,
+        weight: 1.8,
+        fillColor: lv.fill,    // orange family, lighter outward
+        fillOpacity: 1.0
+      });
+      dangerGroup.addLayer(circle);
+
+      // label: place slightly inside the ring on the east
+      const labelPos = destLL(latlng, Math.max(0, r - (r*0.08)), 0);
+      const m = L.marker(labelPos, {
+        interactive: false,
+        icon: L.divIcon({
+          className: 'ring-label',
+          html: `<div class="ring-label-box">${lv.label}</div>`        })
+      });
+      dangerGroup.addLayer(m);
+    });
+  }
+
+  // ---- AIRBLAST (psi rings with dashed outlines + labels) ----
+  if (SHOW_AIR) {
+    const ab = effects?.airblast?.radii_km || {};
+    const levels = [
+      { key:'p20_km', label:'20 psi — buildings collapse', style:{ color:'#ffe3a3', weight:3, dashArray:'6,6' } },
+      { key:'p5_km',  label:'5 psi — most houses destroyed', style:{ color:'#fff1c8', weight:2, dashArray:'4,6' } },
+      { key:'p1_km',  label:'1 psi — glass shatters, injuries', style:{ color:'#ffffff',  weight:1.6, dashArray:'2,6' } },
+    ];
+    levels.forEach((lv) => {
+      const r = (ab[lv.key] ?? 0) * 1000;
+      if (r <= 0) return;
+      airGroup.addLayer(L.circle(latlng, { radius:r, fill:false, ...lv.style }));
+
+      const labelPos = destLL(latlng, Math.max(0, r - (r*0.08)), 0);
+      const m = L.marker(labelPos, {
+        interactive: false,
+        icon: L.divIcon({
+          className: 'ring-label',
+          html: `<div class="ring-label-box">${lv.label}</div>`        })
+      });
+      airGroup.addLayer(m);
+    });
+  }
+}
+
+
+    function explodeAt(latlng, craterMeters, severeMeters) {
+  // Timings
+  const brightUpMs = 2000;   // brighten to peak
+  const fadeMs     = 5000;   // fade out
+  const shockMs    = 2800;   // shockwave reaches the YELLOW zone (severe) and slows as it grows
+
+  // Layers: fireball (orange/red), glare (white), glow (soft yellow), shockwave (white rim)
+  const fire = L.circle(latlng, {
+    radius: Math.max(craterMeters * 0.12, 30),   // start small, grow to crater size
+    pane: 'effects',
+    color: 'transparent',
+    fillColor: '#ff6a00',
+    fillOpacity: 0
+  }).addTo(map);
+
+  const glare = L.circle(latlng, {
+    radius: Math.max(craterMeters * 0.08, 20),   // start small, grow to crater size
+    pane: 'effects',
+    color: 'transparent',
+    fillColor: '#f7aa57',
+    fillOpacity: 0,
+    className: 'explosion-glow'
+  }).addTo(map);
+
+  const glow = L.circle(latlng, {
+    radius: Math.max(craterMeters * 0.15, 40),   // soft halo; also grows to crater size
+    pane: 'effects',
+    color: 'transparent',
+    fillColor: '#ffe89a',
+    fillOpacity: 0,
+    className: 'explosion-glow'
+  }).addTo(map);
+
+  const shock = L.circle(latlng, {
+    radius: 1,
+    pane: 'effects',
+    color: '#fff7cc',
+    weight: 5,
+    fill: false,
+    opacity: 0.95,
+    className: 'shockwave-ring'
+  }).addTo(map);
+
+  const start = performance.now();
+
+  // Targets — fire & glare & glow end exactly at crater radius
+  const fireBaseR  = fire.getRadius();
+  const glareBaseR = glare.getRadius();
+  const glowBaseR  = glow.getRadius();
+
+  const fireMaxR  = craterMeters;
+  const glareMaxR = craterMeters;
+  const glowMaxR  = craterMeters;
+
+  // Shockwave goes to yellow (severe) radius
+  const shockMaxR = Math.max(severeMeters, craterMeters);
+
+  // Easing
+  const easeOutCubic = t => 1 - Math.pow(1 - t, 3); // decelerating
+  const easeInQuad   = t => t * t;
+
+  function tick(now) {
+    const elapsed = now - start;
+
+    // --- Brighten & size-up (0..brightUpMs) ---
+    const b = Math.min(elapsed / brightUpMs, 1);
+    const bEase = easeOutCubic(b);
+
+    // Opacity ramps
+    fire.setStyle({  fillOpacity: 0.90 * bEase });
+    glare.setStyle({ fillOpacity: 1.00 * bEase });
+    glow.setStyle({  fillOpacity: 0.85 * bEase });
+
+    // Radii ramp to EXACT crater radius
+    fire.setRadius(fireBaseR  + (fireMaxR  - fireBaseR)  * bEase);
+    glare.setRadius(glareBaseR + (glareMaxR - glareBaseR) * bEase);
+    glow.setRadius(glowBaseR  + (glowMaxR  - glowBaseR)  * bEase);
+
+    // --- Shockwave (0..shockMs): decelerating growth + fading while expanding ---
+    const s = Math.max(0, Math.min(elapsed / shockMs, 1));
+    const sEase = easeOutCubic(s);
+    const shockR = Math.max(1, shockMaxR * sEase);
+    shock.setRadius(shockR);
+
+    // fade outline WHILE expanding
+    const shockOpacity = 0.95 * (1 - 0.85 * s); // dims as it grows
+    shock.setStyle({ opacity: Math.max(0.08, shockOpacity) });
+
+    // --- Fade fire/glare/glow after peak ---
+    if (elapsed > brightUpMs) {
+      const f = Math.min((elapsed - brightUpMs) / fadeMs, 1);
+      const fEase = 1 - easeInQuad(f); // slow fade
+      fire.setStyle({  fillOpacity: 0.90 * fEase });
+      glare.setStyle({ fillOpacity: 1.00 * fEase });
+      glow.setStyle({  fillOpacity: 0.85 * fEase });
+    }
+
+    // Keep animating until both glow fade and shock are done
+    if (elapsed < Math.max(brightUpMs + fadeMs, shockMs)) {
+      requestAnimationFrame(tick);
+    } else {
+      // Remove transient effects
+      fire.remove(); glare.remove(); glow.remove(); shock.remove();
+
+      // Leave behind a crater mark with EXACT crater size
+      // (subtle dark fill + darker rim, added to ringsGroup so it persists)
+//       const craterScar = L.circle(latlng, {
+//   radius: craterMeters,
+//   color: '#1b0e0e',
+//   weight: 2.5,
+//   fillColor: 'rgba(15,9,9,0.65)',
+//   fillOpacity: 0.65
+// });
+//       ringsGroup.addLayer(craterScar);
+    }
+  }
+  requestAnimationFrame(tick);
+}
+
+function airblastShockwave(latlng, effects, T=3200){
+  const ab = effects?.airblast?.radii_km || {};
+  const ab1 = (ab.p1_km ?? 0) * 1000; // 1 psi outer radius
+  if (!SHOW_AIR || ab1 <= 0) return;
+
+  const shock = L.circle(latlng, {
+    radius: 1,
+    pane: 'effects',
+    color: '#ffffff',
+    weight: 4,
+    fill: false,
+    opacity: 0.95,
+    className: 'shockwave-ring'
+  }).addTo(map);
+
+  //const T = 3200; // total ms
+  const start = performance.now();
+  const easeOutCubic = t => 1 - Math.pow(1 - t, 3); // strong decel near the end
+
+  function tick(now){
+    const t = Math.min((now - start) / T, 1);
+    const r = ab1 * easeOutCubic(t);
+    const op = 0.95 * (1 - 0.9 * t); // fades while expanding
+    shock.setRadius(Math.max(1, r));
+    shock.setStyle({ opacity: Math.max(0.06, op) });
+
+    if (t < 1) requestAnimationFrame(tick);
+    else shock.remove();
+  }
+  requestAnimationFrame(tick);
+}
+
+function renderFx(timestamp=0){
+  if (!FX_CENTER) { fxCtx.clearRect(0,0,fx.width,fx.height); requestAnimationFrame(renderFx); return; }
+
+  // clear canvas
+  fxCtx.clearRect(0,0,fx.width,fx.height);
+
+  const centerPt = map.latLngToContainerPoint(FX_CENTER);
+  const craterPx = metersToPixelsRadius(FX_CENTER, FX_CRATER_M);
+  const thSevPx  = metersToPixelsRadius(FX_CENTER, FX_TH_SEV_M);
+  const ab1Px    = metersToPixelsRadius(FX_CENTER, FX_AB1_M);
+  const ab3Px    = metersToPixelsRadius(FX_CENTER, FX_AB3_M);
+  const ab5Px    = metersToPixelsRadius(FX_CENTER, FX_AB5_M);
+
+  // ---------- Thermal HEAT effect (animated radial gradient) ----------
+  if (SHOW_THERMAL && thSevPx > 1) {
+    // pulse between 0.95 .. 1.05 over ~2.5s
+    const pulse = 1.0 + 0.05 * Math.sin(timestamp * 0.0025);
+    const r0 = Math.max(6, Math.min(craterPx, thSevPx*0.25)) * pulse;
+    const r1 = Math.max(r0+8, Math.min(thSevPx*0.55, craterPx*1.1)) * pulse;
+    const r2 = Math.max(r1+8, thSevPx) * pulse;
+
+    const grd = fxCtx.createRadialGradient(centerPt.x, centerPt.y, r0, centerPt.x, centerPt.y, r2);
+    // strong white-hot core -> orange -> transparent
+    grd.addColorStop(0.00, 'rgba(255,255,230,0.60)');
+grd.addColorStop(Math.min(0.16*pulse,0.22), 'rgba(255,200,80,0.55)');
+grd.addColorStop(0.52, 'rgba(255,140,0,0.22)');
+grd.addColorStop(1.00, 'rgba(255,120,0,0.00)');
+
+    fxCtx.globalCompositeOperation = 'lighter';
+    fxCtx.fillStyle = grd;
+    fxCtx.beginPath();
+    fxCtx.arc(centerPt.x, centerPt.y, r2, 0, Math.PI*2);
+    fxCtx.fill();
+    fxCtx.globalCompositeOperation = 'source-over';
+  }
+
+  // ---------- Airblast PARTICLES ----------
+  if (SHOW_AIR && ab1Px > 5) {
+    // emit a few particles each frame near the center
+    for (let i=0;i<6;i++){
+      airParticles.push({
+        a: Math.random()*Math.PI*2,  // angle
+        r: 2 + Math.random()*6,      // start radius (px)
+        life: 0,                     // 0..1
+        maxR: ab1Px * (1.04 + 0.02*Math.random()), // stop near outer ring
+        size: 1.5 + Math.random()*2.5,
+        opacity: 0.9
+      });
+    }
+
+    if (airParticles.length > 3000) airParticles.splice(0, airParticles.length - 3000);
+
+// update + draw
+for (let i = airParticles.length - 1; i >= 0; i--) {
+  const p = airParticles[i];
+
+  // speed profile center -> outer (1 psi)
+  const frac = Math.min(p.r / Math.max(1, ab1Px), 1);
+  let speed = 3.2 * (1 - Math.pow(frac, 1.6));
+  if (p.r > ab5Px) speed *= 0.90;
+  if (p.r > ab3Px) speed *= 0.80;
+  if (p.r > ab1Px * 0.90) speed = Math.max(speed * 0.55, 0.30);
+  p.r += speed;
+
+  // age/fade
+  p.life += 0.005 + 0.0038 * Math.random();
+  const fade = Math.max(0, 1 - frac * 0.95 - p.life * 0.48);
+  const alpha = Math.max(0, Math.min(1, fade * p.opacity));
+
+  // position in screen space
+  const px = centerPt.x + Math.cos(p.a) * p.r;
+  const py = centerPt.y + Math.sin(p.a) * p.r;
+
+  // draw
+  fxCtx.globalAlpha = alpha;
+  fxCtx.fillStyle = '#ffffff';
+  fxCtx.beginPath();
+  fxCtx.arc(px, py, p.size, 0, Math.PI * 2);
+  fxCtx.fill();
+  fxCtx.globalAlpha = 1;
+
+  // remove if reached target or faded/aged out
+  if (p.r >= p.maxR || alpha <= 0.02 || p.life >= 1.6) {
+    airParticles.splice(i, 1);
+  }
+}
+  } else {
+    airParticles.length = 0;
+  }
+
+  requestAnimationFrame(renderFx);
+}
+requestAnimationFrame(renderFx);
+
+
+
+    async function computeAndRender(){
+      if (!impactLatLng) { alert('Click the map to choose an impact location first.'); return; }
+
+      const payload = {
+        diameter_m: Number(diam.value),
+        velocity_km_s: Number(vel.value),
+        angle_deg: Number(angle.value)
+      };
+
+      try {
+        const res = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.detail || 'Backend error');
+
+        updateStats(data);
+        FX_CENTER = impactLatLng;
+
+const th = data.effects?.thermal?.radii_km || {};
+const ab = data.effects?.airblast?.radii_km || {};
+const craterKm = data.effects?.crater_radius_km ?? 0;
+FX_CRATER_M = Math.max(30, craterKm * 1000);           // use real crater
+FX_TH_SEV_M = (th.burn_3rd ?? 0) * 1000;               // for heat FX pulse
+FX_AB1_M    = (ab.p1_km  ?? 0) * 1000;
+FX_AB3_M    = (ab.p20_km ?? 0) * 1000;
+FX_AB5_M    = (ab.p5_km  ?? 0) * 1000;
+
+craterGroup.clearLayers();
+
+computeCasualtiesThermal(impactLatLng.lat, impactLatLng.lng, th).then(res => {
+  document.getElementById('pop-affected').textContent = fmtPeople(res.affected);
+  document.getElementById('casualties').textContent   = fmtPeople(res.casualties);
+}).catch(()=>{ /* ignore transient failures */ });
+
+if (craterKm > 0) {
+  const crater = L.circle(impactLatLng, {
+    radius: craterKm * 1000,
+    color: '#1b0e0e',
+    weight: 2.5,
+    fillColor: 'rgba(15,9,9,0.65)',
+    fillOpacity: 0.65
+  });
+  craterGroup.addLayer(crater);
+}
+
+// then draw thermal/air rings into their groups
+window.__lastEffects = data.effects || {};
+window.__lastRingsData = { latlng: impactLatLng, radiiKm: {}, effects: data.effects };
+drawRings(impactLatLng, {}, data.effects);
+
+// label under the pin: crater radius & diameter
+const craterLabel = (() => {
+  const r = craterKm;
+  const d = r * 2;
+  return `Crater: ${d ? d.toFixed(3) : 0 | 0} km`;
+})();
+if (impactMarker) {
+  const below = destLL(impactLatLng, 0, -Math.max(FX_CRATER_M * 0.15, 60)); // nudge south
+  L.marker(below, {
+    interactive: false,
+    icon: L.divIcon({
+      className: 'crater-label',
+      html: `<div class="crater-label-box">${craterLabel}</div>`
+    })
+  }).addTo(craterGroup); // <- put the label in craterGroup
+}
+
+// THEN run explosion visuals (now crater already visible)
+explodeAt(impactLatLng, FX_CRATER_M, Math.max(FX_TH_SEV_M, FX_CRATER_M));
+
+// one-off shockwave for immediate feedback
+airblastShockwave(impactLatLng, data.effects);
+
+// if Airblast is enabled, keep repeating the shockwave as a loop
+if (SHOW_AIR) startAirShockLoop();
+
+map.panTo(impactLatLng, { animate: true });
+
+      } catch (e) {
+        console.error(e);
+        alert('Error calling backend: ' + e.message);
+      }
+    }
+
+    document.getElementById('launch').addEventListener('click', computeAndRender);
+    document.getElementById('reset').addEventListener('click', ()=>{
+      impactLatLng = null;
+      clearRings();
+      updateStats({
+  mass_kg:'—',
+  kinetic_energy_joules:'—',
+  kinetic_energy_megatons_tnt:'—',
+  effects:{
+    crater_radius_km:0,
+    thermal:{radii_km:{burn_3rd:0,burn_2nd:0}},
+    airblast:{radii_km:{p20_km:0,p5_km:0,p1_km:0}},
+    seismic:{magnitude_M:null}
+  }
+});
+        FX_CENTER = null;
+        resetAirParticles();
+        stopAirShockLoop();
+        fxCtx.clearRect(0,0,fx.width,fx.height);
+    });
+
+    // initialize value labels
+    if (diamVal && diamVal.tagName === 'INPUT') diamVal.value = String(diam.value); else diamVal.textContent = diam.value;
+if (velVal  && velVal.tagName  === 'INPUT') velVal.value  = String(vel.value);  else velVal.textContent  = vel.value;
+angleVal.textContent = angle.value;
+  </script>
+</body>
+</html>
